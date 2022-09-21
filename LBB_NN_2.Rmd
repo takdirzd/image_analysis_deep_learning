@@ -1,0 +1,276 @@
+---
+title: "Hand-Drawn Digit Analysis using Deep Learning"
+author: "Takdir Zulhaq Dessiaming"
+date: "2022-09-16"
+output:
+  html_document:
+    theme: cosmo
+    highlight: breezedark
+    toc: true
+    toc_float:
+      collapsed: true
+    df_print: paged
+---
+
+# INTRODUCTION
+
+<img src =https://s3.us-west-2.amazonaws.com/secure.notion-static.com/664e8643-e584-4af7-b390-75173bec8ff3/Untitled.gif?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIAT73L2G45EIPT3X45%2F20220918%2Fus-west-2%2Fs3%2Faws4_request&X-Amz-Date=20220918T060036Z&X-Amz-Expires=86400&X-Amz-Signature=9d8464277a7235f7fd08e6304bbcea50faef423d52de753727ab4a8812d410ef&X-Amz-SignedHeaders=host&x-id=GetObject>
+
+The data files train.csv and test.csv contain gray-scale images of hand-drawn digits, from zero through nine.
+
+Each image is 28 pixels in height and 28 pixels in width, for a total of 784 pixels in total. Each pixel has a single pixel-value associated with it, indicating the lightness or darkness of that pixel, with higher numbers meaning darker. This pixel-value is an integer between 0 and 255, inclusive.
+
+The training data set, (train.csv), has 785 columns. The first column, called "label", is the digit that was drawn by the user. The rest of the columns contain the pixel-values of the associated image.
+
+Each pixel column in the training set has a name like pixelx, where x is an integer between 0 and 783, inclusive. To locate this pixel on the image, suppose that we have decomposed x as x = i * 28 + j, where i and j are integers between 0 and 27, inclusive. Then pixelx is located on row i and column j of a 28 x 28 matrix, (indexing by zero).
+
+This dataset taken from kaggle https://www.kaggle.com/competitions/digit-recognizer/data.
+
+**Our Goal is to make a deep learning model, to predict the image we have, using predictor (the pixel size).**
+
+# IMPORT LIBRARY 
+
+```{r, massage = FALSE, error=FALSE}
+library(keras)
+library(dplyr)
+library(caret)
+
+p <- keras_model_sequential() 
+```
+
+# DATA CLEANING
+
+```{r}
+df_train <- read.csv("MNIST in CV/train.csv")
+df_test <- read.csv("MNIST in CV/test.csv")
+
+```
+
+```{r}
+head(df_test)
+```
+
+```{r}
+dim(df_train)
+```
+
+Our data contain 785 column and 42000 observation/row in data Train.
+
+## VISUALIZATION 
+
+```{r}
+
+vizTrain <- function(input){
+  
+  dimmax <- sqrt(ncol(input[,-1]))
+  
+  dimn <- ceiling(sqrt(nrow(input)))
+  par(mfrow=c(dimn, dimn), mar=c(.1, .1, .1, .1))
+  
+  for (i in 1:nrow(input)){
+      m1 <- as.matrix(input[i,2:785])
+      dim(m1) <- c(28,28)
+      
+      m1 <- apply(apply(m1, 1, rev), 1, t)
+      
+      image(1:28, 1:28, 
+            m1, col=grey.colors(255), 
+            # remove axis text
+            xaxt = 'n', yaxt = 'n')
+      text(2, 20, col="white", cex=1.2, input[i, 1])
+  }
+  
+}
+```
+
+The code above is a function to make our data can see by a visualization.
+
+```{r}
+# your code here
+vizTrain(head(df_train, 36))
+```
+
+So our data are look like that. Those are a hand-written number from 0 to 9.
+
+# CROSS VALIDATION
+
+```{r}
+library(rsample)
+
+set.seed(100)
+initializer <- initializer_random_normal(seed = 100)
+
+index <- initial_split(df_train, prop=0.8, strata="label")
+
+data_train <- training(index)
+data_test <- testing(index)
+```
+
+
+```{r}
+prop.table(table(data_train$label))
+```
+
+We devide our data to 80:20 proportion, to `data train` and `data test`, this is for training the data, and model evalutation later.
+
+# SCALING
+
+```{r}
+
+train_x <- data_train %>% select(-label) %>% as.matrix() / 255
+train_y <- data_train %>% select(label)
+
+test_x <- data_test %>% select(-label) %>% as.matrix() / 255
+test_y <- data_test%>% select(label)
+
+range(train_x)
+```
+
+Our data is don't have same scale.
+
+The pixel size is 255, so for scaling we have to devide it with 255, and the result will be 0-1 and we convert it to matrix. The Deep Learning need a scaled data.
+
+So we have 2 `data train`, for all predictor, and for label only. It same to `data test`. 
+
+```{r}
+train_x <- array_reshape(train_x, dim=dim(train_x))
+test_x <- array_reshape(test_x, dim=dim(test_x))
+```
+
+For data predictor (x), we convert it to array.
+
+# ONE-HOT ENCODING
+
+```{r}
+# One-hot encoding target variable
+train_y <- to_categorical(train_y$label, num_classes = 10)
+test_y <- to_categorical(test_y$label, num_classes = 10)
+
+```
+
+The target variabel we do One-Hot Encoding. We convert it to categorical and adjust according to the number of labels (0 until 9, it means 10 label)
+
+# MODELLING ARCHITECTURE 
+
+
+```{r}
+# Membuat arsitektur
+model1 <- keras_model_sequential(name="model_keras") %>% 
+  layer_dense(units=256, activation="relu", input_shape=784, name="hidden_1") %>% 
+  layer_dense(units=128, activation="relu", name="hidden_2") %>%
+  # layer_dense(units=16, activation="relu", name="hidden_3") %>%
+  layer_dense(units=10, activation="softmax", name="output")
+
+model1
+```
+
+For Model Architecture, we do keras model, we have 3 hidden layer with `relu` activation function, and `softmax` for ouput layer (the last layer)
+
+# COMPILE MODEL
+
+The next step is to determine the error function, optimizer, and metrics that will be shown during training.
+
+```{r}
+# your code here
+model1 %>% compile(loss=loss_categorical_crossentropy(),
+                   optimizer=optimizer_sgd(learning_rate=0.1), 
+                   metrics="accuracy")
+
+```
+
+## VISUALIZATION
+
+Whis step, we will visualize our model. So the model will train, and the validation data as measurement.
+
+```{r}
+# your code here
+history <- model1 %>% fit(x=train_x, 
+                          y=train_y, 
+                          validation_data=list(test_x, test_y), 
+                          batch_size=21000,
+                          epoch=20) %>%  plot()
+plot(history)
+```
+
+The good model is when the red line (our model) and the blue line (validation data) is close together like above. 
+
+So we can say that our model is good enough as the accuracy is 0.8+
+
+# MODEL PREDICT AND EVALUATION
+
+## PREDICT WITH DATA VALIDATION
+
+Then we make our prediction using our model above
+
+```{r}
+pred <- predict(model1, test_x) %>%  k_argmax() %>% as.array() %>% as.factor()
+head(pred)
+```
+
+## EVALUATION WITH DATA VALIDATION 
+
+After that we have to evaluate the model. So if we have a bad model, we can tuning it again.
+
+```{r}
+confusionMatrix(pred, reference = as.factor(data_test$label))
+```
+
+As we can see above, our model have 86 % accuaracy, which is we can say it's good enough. 
+
+
+# MODEL ATTEMPT
+
+## MODEL PREDICT WITH UNSEEN DATA
+
+As we have `df_test` above, let's try to implement our model to really unseen data, because it has no label.
+
+## CROSS VALIDATION
+
+We do the same thing like above. We scale and convert to array.
+
+```{r}
+preprocess_x <- function(x){
+    train_x <- x  %>% as.matrix() / 255
+    train_x <- array_reshape(train_x, dim=dim(train_x))
+    return(train_x)
+}
+
+testt_x <- preprocess_x(df_test)
+
+```
+
+## PREDICT
+
+We predict the data with our model above.
+
+```{r}
+pred2 <- predict(model1, testt_x) %>% k_argmax() %>% as.array() %>% as.factor()
+```
+
+```{r}
+df_test$label <- pred2
+df_test[,c(780:785)]
+```
+
+This is what the the model predict the unseen data. 
+
+So the model will predict the unseen data with 86% accuracy.
+
+We can't evaluate it with Confusion Matrix, because the `df_test` have really no label data.
+
+
+# CONCLUSION
+
+🖋 Insight :
+
+- Model have 0.8607 accuracy, For example :   
+  - Our model predict data with label 0 = 805 data, according to the reference data. That means, the model predicts the label 0 to the data, the answers are all correct.
+  - Our model predict data with label 2 = 3 data. That means, the model predicts the label 2 to the data, it has 3 data with wrong prediction, it should be label 0, not label 2.        
+- As this case is multiple class, we just have look to accuracy   
+
+It means, the model have accuracy 86% (right) to predict the unseen data later.
+
+For choosing the best model for our Neural Network/Deep Learning, we should consider few things:     
+- Choose the simplest model    
+- Time consumption     
+- Model is not overfit / underfit, because we need the model to be good in both data (train & test)
